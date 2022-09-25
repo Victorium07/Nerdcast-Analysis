@@ -1,0 +1,147 @@
+---
+title: "JN Quick Analysis"
+author: "Victor Alves"
+date: "11/7/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(jsonlite)
+```
+
+Fetching the data:
+```{r}
+url <- c("https://raw.githubusercontent.com/lucashpmelo/node-terminus/main/src/data/json/nerdcasts-sinc_2021-10-29.json")
+nerdcasts <- fromJSON(httr::content(httr::GET(url), as = "text"))
+
+df_NC <- tibble(nerdcasts) %>% 
+  select(id, published_at, pub_date, duration, title, episode, product_name, friendly_post_time, subject, description, guests, ads, editor) %>% 
+  separate(subject, c("Subject_1", "Subject_2", "Subject_3", "Subject_4"), ",") %>% 
+  mutate(index = 1:nrow(.),
+         pub_date = str_replace(pub_date, "T", " ")) %>% 
+  mutate(pub_date = strptime(str_replace(pub_date, ".000Z",""), format = "%Y-%m-%d %H:%M:%S")) %>% 
+  ggplot(aes(pub_date, duration))+
+  geom_col()
+colnames(df_NC) <- c("id", "Published_at", "Publication_date", "Duration", "Podcast_title", "Episode", "Product", "Friendly_post_time", "Subject_1", "Subject_2", "Subject_3", "Subject_4", "Description", "guests", "ads", "editor", "index")
+
+guests <- tibble(df_NC$guests)
+ads <- tibble(df_NC$ads)
+
+dim <- dim(df_NC)
+guests <- do.call(rbind, lapply(1:dim[1], function(x) {
+   y <- as.data.frame(guests[[1]][x])
+   y<- y %>%
+     mutate(index = x)
+   return(y)
+}))
+ads <- do.call(rbind, lapply(1:dim[1], function(x) {
+  y <- as.data.frame(ads[[1]][x])
+   y<- y %>%
+     mutate(index = x)
+   return(y)
+}))
+
+guests <- guests %>% 
+  select(name, index)
+colnames(guests) <- c("Guest_name", "index")
+ads <- ads %>% 
+  select(title, text, button.title, index)
+colnames(ads) <- c("Ad_title", "Ad_text", "Ad_button_title", "index")
+
+NC_guests <- df_NC %>% 
+  left_join(guests) %>% 
+  select(index,id:Description, editor, Guest_name)
+NC_ads <-df_NC %>% 
+  left_join(ads) %>% 
+  select(index,id:Description, editor, Ad_title:Ad_button_title)
+
+
+```
+
+A few visualizations:
+```{r}
+df_NC %>%
+  group_by(Subject_1) %>%
+  summarize(count = n(),
+            Tempo_total_hr = round(sum(Duration)/3600, 2)) %>%
+  mutate(Subject_1 = fct_reorder(Subject_1, desc(Tempo_total_hr))) %>% 
+  ggplot(aes(Subject_1, Tempo_total_hr))+
+  geom_col()+
+  theme_classic()+
+theme(axis.text.x=element_text(angle = 45, vjust = 0.5))+
+  labs(title = "Duração dos episódios de NC.",
+       subtitle = "Separados por tipo",
+       x = "",
+       y = "Duração")
+
+df_NC %>%
+  group_by(Subject_1, Guest_name) %>%
+  summarize(count = n(),
+            Tempo_total_hr = round(sum(Duration)/3600, 2)) %>% View()
+  mutate(Subject_1 = fct_reorder(Subject_1, desc(count))) %>% 
+  ggplot(aes(Subject_1, count))+
+  geom_col()+
+  theme_classic()+
+theme(axis.text.x=element_text(angle = 45, vjust = 0.5))+
+  labs(title = "Duração dos episódios de NC.",
+       subtitle = "Separados por tipo",
+       x = "",
+       y = "Quantidade de programas")
+
+
+df_NC %>%
+  group_by(Guest_name) %>%
+  summarize(count = n(),
+            Tempo_total_hr = round(sum(Duration)/3600, 2)) %>%
+  top_n(15) %>% 
+  mutate(Guest_name = fct_reorder(Guest_name, desc(count))) %>% 
+  ggplot(aes(Guest_name, count))+
+  geom_col()+
+  theme_classic()+
+theme(axis.text.x=element_text(angle = 45, vjust = 0.5))+
+  labs(title = "Participação por convidado.",
+       subtitle = "",
+       x = "Convidados",
+       y = "Quantidade de participações")
+
+
+df_NC %>%
+  group_by(Product) %>%
+  summarize(count = n(),
+            Tempo_total_hr = round(sum(Duration)/3600, 2)) %>%
+  top_n(15) %>% 
+  mutate(Product = fct_reorder(Product, desc(count))) %>% 
+  ggplot(aes(Product, count))+
+  geom_col()+
+  theme_classic()+
+theme(axis.text.x=element_text(angle = 45, vjust = 0.5))+
+  labs(title = "Tempo de participação por convidado.",
+       subtitle = "",
+       x = "Convidados",
+       y = "Tempo [horas]")
+
+df_NC %>% 
+  ggplot(aes(Publication_date, Duration))+
+  geom_col()
+```
+
+
+```{r}
+NC_ads %>% 
+  filter(!is.na(Ad_title)) %>% 
+  group_by(Ad_title) %>% 
+  summarize(count = n()) %>% 
+  top_n(15) %>% 
+  mutate(Ad_title = fct_reorder(Ad_title, count)) %>% 
+  ggplot(aes(Ad_title, count))+
+  geom_col()+
+  coord_flip()
+```
+
